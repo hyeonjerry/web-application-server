@@ -9,11 +9,14 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.util.HashMap;
 import java.util.Map;
 import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HttpRequestUtils;
+import util.HttpRequestUtils.Pair;
+import util.IOUtils;
 
 public class RequestHandler extends Thread {
 
@@ -44,16 +47,26 @@ public class RequestHandler extends Thread {
     ) {
       // TODO 사용자 요청에 대한 처리는 이 곳에 구현하면 된다.
       final String[] tokens = readAndTokenize(br);
-      final String url = tokens[1];
-      final String[] resources = url.split("\\?");
-      final String resourcePath = resources[0];
-      if (resources.length > 1) {
-        final Map<String, String> queryParams = HttpRequestUtils.parseQueryString(resources[1]);
+      final String httpMethod = tokens[0];
+      final String resourcePath = tokens[1];
+
+      String header;
+      final Map<String, Pair> headers = new HashMap<>();
+      while (!(header = br.readLine()).isEmpty()) {
+        final Pair pair = HttpRequestUtils.parseHeader(header);
+        headers.put(pair.getKey(), pair);
+      }
+
+      if (httpMethod.equalsIgnoreCase("post")) {
+        final Pair pair = headers.get("Content-Length");
+        final int contentLength = Integer.parseInt(pair.getValue());
+        final String body = IOUtils.readData(br, contentLength);
+        final Map<String, String> values = HttpRequestUtils.parseQueryString(body);
         final User user = new User(
-            queryParams.get("userId"),
-            queryParams.get("password"),
-            queryParams.get("name"),
-            queryParams.get("email")
+            values.get("userId"),
+            values.get("password"),
+            values.get("name"),
+            values.get("email")
         );
         System.out.println(user);
       }
