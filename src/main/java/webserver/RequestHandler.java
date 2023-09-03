@@ -11,11 +11,11 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import util.HttpRequestUtils;
-import util.HttpRequestUtils.Pair;
 import util.IOUtils;
 
 public class RequestHandler extends Thread {
@@ -29,56 +29,68 @@ public class RequestHandler extends Thread {
     this.connection = connectionSocket;
   }
 
-  private static String[] readAndTokenize(final BufferedReader br) throws IOException {
-    final String line = br.readLine();
-    return line.split(" ");
-  }
-
   @Override
   public void run() {
     log.debug("New Client Connect! Connected IP : {}, Port : {}", this.connection.getInetAddress(),
         this.connection.getPort());
 
     try (
-        final InputStream in = this.connection.getInputStream();
-        final OutputStream out = this.connection.getOutputStream();
-        final InputStreamReader reader = new InputStreamReader(in);
-        final BufferedReader br = new BufferedReader(reader)
+        final BufferedReader br = bufferingInputStream(this.connection.getInputStream());
+        final OutputStream out = this.connection.getOutputStream()
     ) {
       // TODO 사용자 요청에 대한 처리는 이 곳에 구현하면 된다.
-      final String[] tokens = readAndTokenize(br);
-      final String httpMethod = tokens[0];
-      final String resourcePath = tokens[1];
-
-      String header;
-      final Map<String, Pair> headers = new HashMap<>();
-      while (!(header = br.readLine()).isEmpty()) {
-        final Pair pair = HttpRequestUtils.parseHeader(header);
-        headers.put(pair.getKey(), pair);
-      }
+      final String line = br.readLine();
+      final RequestInfo requestInfo = extractRequestInfo(line);
+      final Map<String, String> headers = extractHeaders(br);
 
       final DataOutputStream dos = new DataOutputStream(out);
-      if (httpMethod.equalsIgnoreCase("post")) {
-        final Pair pair = headers.get("Content-Length");
-        final int contentLength = Integer.parseInt(pair.getValue());
-        final String body = IOUtils.readData(br, contentLength);
-        final Map<String, String> values = HttpRequestUtils.parseQueryString(body);
+
+      if (requestInfo.isPostMethod()) {
+        final int contentLength = Integer.parseInt(headers.get("Content-Length"));
+        final Map<String, String> body = HttpRequestUtils.parseQueryString(
+            IOUtils.readData(br, contentLength)
+        );
+
         final User user = new User(
-            values.get("userId"),
-            values.get("password"),
-            values.get("name"),
-            values.get("email")
+            body.get("userId"),
+            body.get("password"),
+            body.get("name"),
+            body.get("email")
         );
         System.out.println(user);
+
         response302Header(dos, "/index.html");
       } else {
-        final byte[] body = Files.readAllBytes(new File(PREFIX_PATH + resourcePath).toPath());
+        final byte[] body = Files.readAllBytes(
+            new File(PREFIX_PATH + requestInfo.getUrl()).toPath()
+        );
+
         response200Header(dos, body.length);
         responseBody(dos, body);
       }
     } catch (final IOException e) {
       log.error(e.getMessage());
     }
+  }
+
+  private BufferedReader bufferingInputStream(final InputStream in) {
+    final InputStreamReader reader = new InputStreamReader(in);
+    return new BufferedReader(reader);
+  }
+
+  private RequestInfo extractRequestInfo(final String request) {
+    final String[] tokens = request.split(" ");
+    return new RequestInfo(tokens);
+  }
+
+  private Map<String, String> extractHeaders(final BufferedReader br) throws IOException {
+    String line;
+    final Map<String, String> headers = new HashMap<>();
+    while (!(line = br.readLine()).isEmpty()) {
+      final String[] header = line.split(": ");
+      headers.put(header[0].trim(), header[1].trim());
+    }
+    return headers;
   }
 
   private void response200Header(final DataOutputStream dos, final int lengthOfBodyContent) {
@@ -108,6 +120,62 @@ public class RequestHandler extends Thread {
       dos.flush();
     } catch (final IOException e) {
       log.error(e.getMessage());
+    }
+  }
+
+  private static class RequestInfo {
+
+    private final String method;
+    private final String url;
+    private final String httpVersion;
+
+    public RequestInfo(final String... tokens) {
+      this.method = tokens[0];
+      this.url = tokens[1];
+      this.httpVersion = tokens[2];
+    }
+
+    public String getUrl() {
+      return this.url;
+    }
+
+    public String getMethod() {
+      return this.method;
+    }
+
+    public String getHttpVersion() {
+      return this.httpVersion;
+    }
+
+    public boolean isPostMethod() {
+      return this.method.equalsIgnoreCase("post");
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      final RequestInfo that = (RequestInfo) o;
+      return Objects.equals(this.url, that.url) && Objects.equals(this.method, that.method)
+          && Objects.equals(this.httpVersion, that.httpVersion);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(this.url, this.method, this.httpVersion);
+    }
+
+    @Override
+    public String toString() {
+      return "RequestInfo{" +
+          "method='" + this.method + '\'' +
+          ", url='" + this.url + '\'' +
+          ", httpVersion='" + this.httpVersion + '\'' +
+          '}';
     }
   }
 }
