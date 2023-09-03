@@ -25,6 +25,9 @@ public class RequestHandler extends Thread {
 
   private static final Logger log = LoggerFactory.getLogger(RequestHandler.class);
   private static final String PREFIX_PATH = "./webapp";
+  private static final String INDEX_PAGE = "/index.html";
+  private static final String CSS_CONTENT_TYPE = "text/css";
+  private static final String HTML_CONTENT_TYPE = "text/html";
 
   private final Socket connection;
 
@@ -62,12 +65,12 @@ public class RequestHandler extends Thread {
 
         if (requestInfo.getUrl().equals("/user/create")) {
           DataBase.addUser(user);
-          response302Header(dos, "/index.html");
+          response302Header(dos, INDEX_PAGE);
         } else if (requestInfo.getUrl().equals("/user/login")) {
           if (DataBase.findUserById(user.getUserId()) == null) {
             response302Header(dos, "/user/login_failed.html");
           } else {
-            response302Header(dos, "/index.html", "logined=true");
+            response302Header(dos, INDEX_PAGE, "logined=true");
           }
         }
       } else if (requestInfo.getUrl().equals("/user/list")) {
@@ -79,17 +82,22 @@ public class RequestHandler extends Thread {
               .map(User::toString)
               .collect(Collectors.joining("\n"))
               .getBytes();
-          response200Header(dos, body.length);
+          response200Header(dos, body.length, HTML_CONTENT_TYPE);
           responseBody(dos, body);
         } else {
-          response302Header(dos, "/index.html");
+          response302Header(dos, INDEX_PAGE);
         }
       } else {
         final byte[] body = Files.readAllBytes(
             new File(PREFIX_PATH + requestInfo.getUrl()).toPath()
         );
 
-        response200Header(dos, body.length);
+        if (requestInfo.getUrl().startsWith("/css")) {
+          response200Header(dos, body.length, CSS_CONTENT_TYPE);
+        } else {
+          response200Header(dos, body.length, HTML_CONTENT_TYPE);
+        }
+
         responseBody(dos, body);
       }
     } catch (final IOException e) {
@@ -117,10 +125,14 @@ public class RequestHandler extends Thread {
     return headers;
   }
 
-  private void response200Header(final DataOutputStream dos, final int lengthOfBodyContent) {
+  private void response200Header(
+      final DataOutputStream dos,
+      final int lengthOfBodyContent,
+      final String contentType
+  ) {
     try {
       dos.writeBytes("HTTP/1.1 200 OK \r\n");
-      dos.writeBytes("Content-Type: text/html;charset=utf-8\r\n");
+      dos.writeBytes("Content-Type: " + contentType + ";charset=utf-8\r\n");
       dos.writeBytes("Content-Length: " + lengthOfBodyContent + "\r\n");
       dos.writeBytes("\r\n");
     } catch (final IOException e) {
