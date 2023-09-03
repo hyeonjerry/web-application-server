@@ -1,5 +1,6 @@
 package webserver;
 
+import db.DataBase;
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.File;
@@ -50,16 +51,23 @@ public class RequestHandler extends Thread {
         final Map<String, String> body = HttpRequestUtils.parseQueryString(
             IOUtils.readData(br, contentLength)
         );
-
         final User user = new User(
             body.get("userId"),
             body.get("password"),
             body.get("name"),
             body.get("email")
         );
-        System.out.println(user);
 
-        response302Header(dos, "/index.html");
+        if (requestInfo.getUrl().equals("/user/create")) {
+          DataBase.addUser(user);
+          response302Header(dos, "/index.html");
+        } else if (requestInfo.getUrl().equals("/user/login")) {
+          if (DataBase.findUserById(user.getUserId()) == null) {
+            response302Header(dos, "/user/login_failed.html");
+          } else {
+            response302Header(dos, "/index.html", "logined=true");
+          }
+        }
       } else {
         final byte[] body = Files.readAllBytes(
             new File(PREFIX_PATH + requestInfo.getUrl()).toPath()
@@ -108,6 +116,21 @@ public class RequestHandler extends Thread {
     try {
       dos.writeBytes("HTTP/1.1 302 FOUND \r\n");
       dos.writeBytes("Location: " + location + "\r\n");
+      dos.writeBytes("\r\n");
+    } catch (final IOException e) {
+      log.error(e.getMessage());
+    }
+  }
+
+  private void response302Header(
+      final DataOutputStream dos,
+      final String location,
+      final String cookie
+  ) {
+    try {
+      dos.writeBytes("HTTP/1.1 302 FOUND \r\n");
+      dos.writeBytes("Location: " + location + "\r\n");
+      dos.writeBytes("Set-Cookie: " + cookie + "; Path=/\r\n");
       dos.writeBytes("\r\n");
     } catch (final IOException e) {
       log.error(e.getMessage());
