@@ -10,9 +10,11 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +69,20 @@ public class RequestHandler extends Thread {
           } else {
             response302Header(dos, "/index.html", "logined=true");
           }
+        }
+      } else if (requestInfo.getUrl().equals("/user/list")) {
+        final Map<String, String> cookies = HttpRequestUtils.parseCookies(headers.get("Cookie"));
+        final boolean isLogined = Boolean.parseBoolean(cookies.get("logined"));
+        if (isLogined) {
+          final Collection<User> users = DataBase.findAll();
+          final byte[] body = users.stream()
+              .map(User::toString)
+              .collect(Collectors.joining("\n"))
+              .getBytes();
+          response200Header(dos, body.length);
+          responseBody(dos, body);
+        } else {
+          response302Header(dos, "/index.html");
         }
       } else {
         final byte[] body = Files.readAllBytes(
